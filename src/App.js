@@ -1,5 +1,5 @@
 import React, { Component } from 'react';
-import uniqueId from 'lodash/uniqueId';
+import flow from 'lodash/flow';
 import './App.css';
 import Konva from 'konva';
 
@@ -22,49 +22,73 @@ class App extends Component {
   container = React.createRef()
   tableCount = 0
 
-  commitTransformation = () => {
-    const tables = this.selectGroup.getChildren();
-    const transform = tables.map(node => ({
-      rotation: this.selectGroup.rotation(),
-      scale: node.getAbsoluteScale(),
-      position: node.getAbsolutePosition(),
-    }));
+  syncTransformation = () => {
+    this.selectGroup.getChildren().forEach(transformedShape => {
+      const tableId = transformedShape.getAttr('id').split('-').splice(1).join('-');
+      const originalShape = this.stage.find(`#shape-${tableId}`)[0];
+
+      originalShape.rotation(this.selectGroup.rotation() + transformedShape.rotation());
+      originalShape.scale(transformedShape.getAbsoluteScale());
+      originalShape.setAbsolutePosition(transformedShape.getAbsolutePosition());
+    });
+
+    this.mainLayer.draw();
+  }
+
+  centerTextInTable = () => {
+    const selectedTables = this.selectGroup.getChildren();
+
+    selectedTables.forEach((transformedShape) => {
+      const tableId = transformedShape.getAttr('id').split('-').splice(1).join('-');
+      const text = this.stage.find(`#text-${tableId}`)[0];
+      text.moveToTop();
+      text.setAbsolutePosition(transformedShape.getAbsolutePosition());
+    });
+
+    this.mainLayer.draw();
+  }
+
+  endTransformation = () => {
+    this.syncTransformation();
+
     this.selectGroup.removeChildren();
     this.selectGroup.position({ x: 0, y: 0 });
     this.selectGroup.scale({ x: 1, y: 1 });
     this.selectGroup.rotation(0);
-    this.transformer.visible(false)
-    this.mainLayer.add(this.selectGroup);
-    tables.forEach((table, i) => {
-      this.mainLayer.add(table);
-      table.rotation(transform[i].rotation + table.rotation());
-      table.scale(transform[i].scale);
-      table.position(transform[i].position);
-      this.stage.find(`#text-${table.getAttr('id')}`)[0].moveToTop();
-      this.mainLayer.draw();
-    })
+
+    this.transformer.visible(false);
+
+    this.mainLayer.draw();
   }
 
-  selectTable = (table, text) => {
+  selectTable = (table) => {
     const selectedTables = this.selectGroup.getChildren();
+    const tableShape = table.find('.table-shape')[0].clone({
+      id: 'selection-' + table.getAttr('id'),
+      opacity: 0,
+    });
 
     if (selectedTables.length) {
-      this.commitTransformation();
-      selectedTables.forEach((selectedTable) => {
-        this.selectGroup.add(selectedTable);
-      })
+      this.endTransformation();
+      selectedTables.forEach(transformedShape => {
+        const tableId = transformedShape.getAttr('id').split('-').splice(1).join('-');
+        const originalShape = this.stage.find(`#shape-${tableId}`)[0];
+        this.selectGroup.add(originalShape.clone({
+          id: 'selection-' + tableId,
+          opacity: 0,
+        }));
+      });
     }
 
-    this.selectGroup.add(table);
+    this.selectGroup.add(tableShape);
 
     this.selectGroup.visible(true)
     this.selectGroup.draggable(true)
+    this.selectGroup.moveToTop()
 
     this.transformer.visible(true);
     this.transformer.moveToTop();
     this.transformer.forceUpdate();
-
-    text.moveToTop();
 
     this.mainLayer.draw();
   }
@@ -114,26 +138,17 @@ class App extends Component {
     this.transformer.add(rotator);
     this.mainLayer.draw();
 
-    const updateText = () => {
-      const node = this.transformer.getNode();
-      const tables = node === this.selectGroup ?
-        this.selectGroup.getChildren() : [node]
+    const onTransform = flow(
+      this.syncTransformation,
+      this.centerTextInTable,
+    );
 
-      tables.forEach((table) => {
-        const text = this.stage.find(`#text-${table.getAttr('id')}`)[0];
-        text.moveToTop();
-        text.position(table.getAbsolutePosition());
-      });
-
-      this.mainLayer.draw();
-    };
-
-    this.transformer.on('transform', updateText);
-    this.selectGroup.on('dragmove', updateText);
+    this.transformer.on('transform', onTransform);
+    this.selectGroup.on('dragmove', onTransform);
 
     const handleClickStage = (e) => {
       if (e.target === this.stage) {
-        this.commitTransformation();
+        this.endTransformation();
         this.selectGroup.draggable(false);
         this.transformer.visible(false);
         this.mainLayer.draw();
@@ -143,29 +158,32 @@ class App extends Component {
     let startPointerPost;
     let tablesOriginalRotations;
 
-    const handleRotation = (e) => {
-      const node = this.transformer.getNode();
-      const tables = node === this.selectGroup ?
-        this.selectGroup.getChildren() : [node];
-      const rotatorPos = rotator.position();
-      const pointerPos = {
-        left: e.evt.clientX !== undefined ? e.evt.clientX : e.evt.touches[0].clientX,
-        top: e.evt.clientX !== undefined ? e.evt.clientY : e.evt.touches[0].clientY
-      };
-      const offset = {
-        x: pointerPos.left - startPointerPost.left,
-        y: pointerPos.top - startPointerPost.top,
-      };
+    const handleRotation = flow(
+      (e) => {
+        const node = this.transformer.getNode();
+        const tables = node === this.selectGroup ?
+          this.selectGroup.getChildren() : [node];
+        const rotatorPos = rotator.position();
+        const pointerPos = {
+          left: e.evt.clientX !== undefined ? e.evt.clientX : e.evt.touches[0].clientX,
+          top: e.evt.clientX !== undefined ? e.evt.clientY : e.evt.touches[0].clientY
+        };
+        const offset = {
+          x: pointerPos.left - startPointerPost.left,
+          y: pointerPos.top - startPointerPost.top,
+        };
 
-      const rotation = Konva.Util._radToDeg(offset.x / 100) / 2;
+        const rotation = Konva.Util._radToDeg(offset.x / 100) / 2;
 
-      tables.forEach((table, i) => {
-        table.rotation(rotation + tablesOriginalRotations[i]);
-      });
+        tables.forEach((table, i) => {
+          table.rotation(rotation + tablesOriginalRotations[i]);
+        });
 
-      this.transformer.forceUpdate();
-      this.mainLayer.draw();
-    }
+        this.transformer.forceUpdate();
+        this.mainLayer.draw();
+      },
+      this.syncTransformation
+    );
 
     const makeHandleRotation = (e) => {
       startPointerPost = {
@@ -196,7 +214,12 @@ class App extends Component {
   handleAddTable = () => {
     this.tableCount++;
 
-    var rect = new Konva.Rect({
+    const table = new Konva.Group({
+      id: `table-${this.tableCount}`,
+      name: 'table',
+    });
+
+    const shape = new Konva.Rect({
       x: (this.container.current.getBoundingClientRect().width / 2) - (100 / 2),
       y: (this.container.current.getBoundingClientRect().height / 2) - (50 / 2),
       width: 100,
@@ -206,24 +229,27 @@ class App extends Component {
       fill: Konva.Util.getRandomColor(),
       stroke: 'black',
       strokeWidth: 4,
-      name: 'table',
-      id: `table-${this.tableCount}`
+      name: 'table-shape',
+      id: `shape-table-${this.tableCount}`
     });
 
-    var text = new Konva.Text({
+    const text = new Konva.Text({
       text: `T${this.tableCount}`,
+      name: 'table-text',
       id: `text-table-${this.tableCount}`,
     });
 
+    table.add(shape);
+    table.add(text);
+
     text.offsetX(text.width() / 2);
     text.offsetY(text.height() / 2);
-    text.position(rect.position());
+    text.position(shape.position());
 
-    rect.on('click', () => this.selectTable(rect, text));
-    rect.on('tap', () => this.selectTable(rect, text));
+    table.on('click', () => this.selectTable(table));
+    table.on('tap', () => this.selectTable(table));
 
-    this.mainLayer.add(rect);
-    this.mainLayer.add(text);
+    this.mainLayer.add(table);
     this.mainLayer.draw();
   }
 

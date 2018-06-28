@@ -5,6 +5,7 @@
   "homepage": "http://skimi.github.io/poc-konva",
   "dependencies": {
     "konva": "^2.1.6",
+    "lodash": "^4.17.10",
     "react": "^16.4.1",
     "react-dom": "^16.4.1",
     "react-konva": "^1.7.7",
