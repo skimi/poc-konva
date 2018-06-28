@@ -22,13 +22,18 @@ class App extends Component {
   container = React.createRef()
   tableCount = 0
 
+  state = {
+    zoom: 100,
+  }
+
   syncTransformation = () => {
     this.selectGroup.getChildren().forEach(transformedShape => {
       const tableId = transformedShape.getAttr('id').split('-').splice(1).join('-');
       const originalShape = this.stage.find(`#shape-${tableId}`)[0];
 
       originalShape.rotation(this.selectGroup.rotation() + transformedShape.rotation());
-      originalShape.scale(transformedShape.getAbsoluteScale());
+      originalShape.scaleX(this.selectGroup.scaleX() * transformedShape.scaleX());
+      originalShape.scaleY(this.selectGroup.scaleY() * transformedShape.scaleY());
       originalShape.setAbsolutePosition(transformedShape.getAbsolutePosition());
     });
 
@@ -93,11 +98,22 @@ class App extends Component {
     this.mainLayer.draw();
   }
 
+  handlePanning = (e) => {
+    if (e.target === this.stage) {
+      this.stage.draggable(true);
+    } else {
+      this.stage.draggable(false);
+    }
+  }
+
   componentDidMount() {
+    const containerSize = this.container.current.getBoundingClientRect();
     this.stage = new Konva.Stage({
       container: 'container',
-      width: this.container.current.getBoundingClientRect().width,
-      height: this.container.current.getBoundingClientRect().height,
+      width: containerSize.width,
+      height: containerSize.height,
+      offsetX: -containerSize.width / 2,
+      offsetY: -containerSize.height / 2,
     });
     this.transformer = new Konva.Transformer({
       visible: false,
@@ -125,15 +141,17 @@ class App extends Component {
       .forEach(resizer => resizer.setScale({ x: 2, y: 2 }));
     this.transformer.attachTo(this.selectGroup);
     const rotator = new Konva.Circle({
-      radius: 10,
+      radius: 5,
       fill: 'white',
       stroke: 'rgb(0, 161, 255)',
-      fill: 'white',
-      strokeWidth: 2,
-      offsetX: 5,
-      offsetY: 5,
-      y: -20,
-      x: -20,
+      strokeWidth: 1,
+      offsetX: 10,
+      offsetY: 10,
+      scaleX: 2,
+      scaleY: 2,
+      y: 0,
+      x: 0,
+      name: 'rotater',
     });
     this.transformer.add(rotator);
     this.mainLayer.draw();
@@ -205,10 +223,15 @@ class App extends Component {
 
     this.stage.on('click', handleClickStage);
     this.stage.on('tap', handleClickStage);
+
     rotator.on('touchstart', makeHandleRotation);
     rotator.on('mousedown', makeHandleRotation);
+
     this.stage.on('touchend', cancelHandleRotation);
     this.stage.on('mouseup', cancelHandleRotation);
+
+    this.stage.on('touchstart', this.handlePanning);
+    this.stage.on('mousedown', this.handlePanning);
   }
 
   handleAddTable = () => {
@@ -220,8 +243,8 @@ class App extends Component {
     });
 
     const shape = new Konva.Rect({
-      x: (this.container.current.getBoundingClientRect().width / 2) - (100 / 2),
-      y: (this.container.current.getBoundingClientRect().height / 2) - (50 / 2),
+      x: 0,
+      y: 0,
       width: 100,
       height: 50,
       offsetX: 50,
@@ -259,6 +282,19 @@ class App extends Component {
     console.log(this.stage.toJSON());
   }
 
+  handleChangeZoom = (e) => {
+    const zoom = e.target.value;
+    const scale = zoom / 100;
+    const invert = 1 / scale;
+    this.setState({ zoom });
+    this.mainLayer.scaleX(scale);
+    this.mainLayer.scaleY(scale);
+    this.transformer.getChildren()
+      .filter(child => RESIZERS_NAMES.includes(child.getAttr('name')))
+      .forEach(resizer => resizer.setScale({ x: 2 * invert, y: 2 * invert }));
+    this.mainLayer.draw();
+  }
+
   render() {
     return (
       <div className="App">
@@ -275,6 +311,17 @@ class App extends Component {
           >
             Export
           </button>
+        </div>
+        <div id="zoomInput">
+          {this.state.zoom}%{' '}
+          <input
+            type="range"
+            name="volume"
+            min={0}
+            max={120}
+            value={this.state.zoom}
+            onChange={this.handleChangeZoom}
+          />
         </div>
         <div id="container" ref={this.container}></div>
       </div>
