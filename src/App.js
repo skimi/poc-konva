@@ -219,15 +219,8 @@ class App extends Component {
     text.offsetY(text.height() / 2);
     text.position(rect.position());
 
-    const updateText = () => {
-      text.position(rect.getAbsolutePosition());
-      text.moveToTop();
-      this.mainLayer.draw();
-    };
-
     rect.on('click', () => this.selectTable(rect, text));
     rect.on('tap', () => this.selectTable(rect, text));
-    rect.on('dragmove', updateText);
 
     this.mainLayer.add(rect);
     this.mainLayer.add(text);
