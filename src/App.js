@@ -21,49 +21,54 @@ class App extends Component {
     zoom: 100,
   }
 
-  endTransformation = () => {
+  resetTransformationGroup = () => {
+    const tables = this.selectGroup.getChildren();
     this.selectGroup.removeChildren();
+    tables.forEach(transformedShape => {
+      const tableId = transformedShape.getAttr('id').split('-').splice(1).join('-');
+      this.stage.find(`#${tableId}`)[0].fire('resetTransform');
+    });
     this.selectGroup.position({ x: 0, y: 0 });
     this.selectGroup.scale({ x: 1, y: 1 });
     this.selectGroup.rotation(0);
-    this.transformer.visible(false);
     this.mainLayer.draw();
   }
 
-  selectTable = (table) => {
-    const selectedTables = this.selectGroup.getChildren();
-    const tableShape = table.find('.table-shape')[0].clone({
-      id: 'selection-' + table.getAttr('id'),
-      opacity: 0,
-    });
+  // selectTable = (table) => {
+  //   const selectedTables = this.selectGroup.getChildren();
+  //   const tableShape = table.find('.table-shape')[0].clone({
+  //     id: 'selection-' + table.getAttr('id'),
+  //     opacity: 0,
+  //   });
 
-    if (selectedTables.length) {
-      this.endTransformation();
-      selectedTables.forEach(transformedShape => {
-        const tableId = transformedShape.getAttr('id').split('-').splice(1).join('-');
-        const originalShape = this.stage.find(`#shape-${tableId}`)[0];
-        this.selectGroup.add(originalShape.clone({
-          id: 'selection-' + tableId,
-          opacity: 0,
-        }));
-      });
-    }
+  //   if (selectedTables.length) {
+  //     this.resetTransformationGroup();
+  //     selectedTables.forEach(transformedShape => {
+  //       const tableId = transformedShape.getAttr('id').split('-').splice(1).join('-');
+  //       const originalShape = this.stage.find(`#shape-${tableId}`)[0];
+  //       this.selectGroup.add(originalShape.clone({
+  //         id: 'selection-' + tableId,
+  //         opacity: 0,
+  //       }));
+  //     });
+  //   }
 
-    this.selectGroup.add(tableShape);
+  //   this.selectGroup.add(tableShape);
 
-    this.selectGroup.visible(true)
-    this.selectGroup.draggable(true)
-    this.selectGroup.moveToTop()
+  //   this.selectGroup.visible(true)
+  //   this.selectGroup.draggable(true)
+  //   this.selectGroup.moveToTop()
 
-    this.transformer.visible(true);
-    this.transformer.moveToTop();
-    this.transformer.forceUpdate();
+  //   this.transformer.visible(true);
+  //   this.transformer.moveToTop();
+  //   this.transformer.forceUpdate();
 
-    this.mainLayer.draw();
-  }
+  //   this.mainLayer.draw();
+  // }
 
   componentDidMount() {
     const containerSize = this.container.current.getBoundingClientRect();
+
     this.stage = new Konva.Stage({
       container: 'container',
       width: containerSize.width,
@@ -71,6 +76,7 @@ class App extends Component {
       offsetX: -containerSize.width / 2,
       offsetY: -containerSize.height / 2,
     });
+
     this.transformer = new Konva.Transformer({
       visible: false,
       boundBoxFunc: function (oldBoundBox, newBoundBox) {
@@ -82,10 +88,11 @@ class App extends Component {
         return newBoundBox;
       }
     });
+
     this.mainLayer = new Konva.Layer();
     this.selectGroup = new Konva.Group({
       draggable: true,
-      visible: false,
+      visible: true,
       id: 'selectGroup',
     });
     this.stage.add(this.mainLayer);
@@ -105,8 +112,6 @@ class App extends Component {
 
     const handleClickStage = (e) => {
       if (e.target === this.stage) {
-        this.endTransformation();
-        this.selectGroup.draggable(false);
         this.transformer.visible(false);
         this.mainLayer.draw();
       }
@@ -118,7 +123,7 @@ class App extends Component {
     [
       biggerHandles,
       individualRotation,
-      stagePanning,
+      // stagePanning,
     ].forEach(fn => fn({
       stage: this.stage,
       mainLayer: this.mainLayer,
@@ -127,9 +132,24 @@ class App extends Component {
     }))
   }
 
+  selectTable = (table) => {
+    const isSelectionOnGoing = this.transformer.visible();
+
+    if (!isSelectionOnGoing) {
+      this.selectGroup.removeChildren();
+      this.selectGroup.add(table);
+    }
+
+    this.transformer.forceUpdate();
+    this.transformer.visible(true);
+    this.transformer.moveToTop();
+    this.mainLayer.draw();
+  }
+
   handleAddTable = () => {
     this.tableCount++;
 
+    const isSelectionOnGoing = this.transformer.visible();
     const tableId = this.tableCount;
 
     const table = new Konva.Group({
@@ -157,6 +177,17 @@ class App extends Component {
       id: `text-table-${tableId}`,
     });
 
+    let transformationPlaceholder = shape.clone({
+      id: 'transform-' + table.getAttr('id'),
+      name: 'transformation-placeholder',
+      fill: 'red',
+      opacity: 0.5,
+    });
+
+    if (isSelectionOnGoing) {
+      this.resetTransformationGroup();
+    }
+
     table.add(shape);
     table.add(text);
 
@@ -164,18 +195,33 @@ class App extends Component {
     text.offsetY(text.height() / 2);
     text.position(shape.position());
 
-    table.on('click', () => this.selectTable(table));
-    table.on('tap', () => this.selectTable(table));
+    transformationPlaceholder.on('mousedown', () => this.selectTable(transformationPlaceholder));
+    transformationPlaceholder.on('touchstart', () => this.selectTable(transformationPlaceholder));
+
     table.on('syncTransform', () => {
-      const transformedShape = this.stage.find(`#selection-table-${tableId}`)[0];
-      shape.rotation(this.selectGroup.rotation() + transformedShape.rotation());
-      shape.scaleX(this.selectGroup.scaleX() * transformedShape.scaleX());
-      shape.scaleY(this.selectGroup.scaleY() * transformedShape.scaleY());
-      shape.setAbsolutePosition(transformedShape.getAbsolutePosition());
-      text.setAbsolutePosition(transformedShape.getAbsolutePosition());
+      shape.rotation(this.selectGroup.rotation() + transformationPlaceholder.rotation());
+      shape.scaleX(this.selectGroup.scaleX() * transformationPlaceholder.scaleX());
+      shape.scaleY(this.selectGroup.scaleY() * transformationPlaceholder.scaleY());
+      shape.setAbsolutePosition(transformationPlaceholder.getAbsolutePosition());
+      text.setAbsolutePosition(transformationPlaceholder.getAbsolutePosition());
     });
 
+    table.on('resetTransform', () => {
+      transformationPlaceholder = shape.clone({
+        id: 'transform-' + table.getAttr('id'),
+        name: 'transformation-placeholder',
+        fill: 'red',
+        opacity: 0.5,
+      });
+      this.selectGroup.add(transformationPlaceholder);
+      this.selectGroup.moveToTop();
+      this.transformer.forceUpdate();
+    })
+
     this.mainLayer.add(table);
+    this.selectGroup.add(transformationPlaceholder);
+    this.selectGroup.moveToTop();
+    this.transformer.forceUpdate();
     this.mainLayer.draw();
   }
 
